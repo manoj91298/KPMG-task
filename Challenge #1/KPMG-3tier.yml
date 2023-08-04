@@ -1,0 +1,240 @@
+# I will use AWS CloudFormation to create a simple 3-tier environment consisting of a web server, application server, and 
+# database server.
+
+# Steps:
+
+# Create an AWS CloudFormation template to define the infrastructure.
+# This template to create a stack and provision the resources.
+
+# aws cloudformation create-stack \
+#   --stack-name 3-tier-stack \
+#   --template-body KPMG-3tier.yml
+
+# CloudFormation Template (3-tier-template.yaml):
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation Template for a 3-tier environment
+
+Parameters:
+  InstanceType:
+    Description: EC2 instance type for web and application servers
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+
+  DBInstanceClass:
+    Description: RDS instance type for the database layer
+    Type: String
+    Default: db.t2.micro
+    AllowedValues:
+      - db.t2.micro
+      - db.t2.small
+      - db.t2.medium
+
+Resources:
+  WebLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: WebLoadBalancer
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref WebLoadBalancerSecurityGroup
+
+  WebLoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the web load balancer
+      VpcId: !Ref VPC
+
+  WebInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-02a89066c48741345  # Replace with your desired AMI ID
+      SecurityGroupIds:
+        - !Ref WebInstanceSecurityGroup
+      SubnetId: !Ref PublicSubnet1
+
+  WebInstance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-02a89066c48741345  # Replace with your desired AMI ID
+      SecurityGroupIds:
+        - !Ref WebInstanceSecurityGroup
+      SubnetId: !Ref PublicSubnet2
+
+  WebInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for web instances
+      VpcId: !Ref VPC
+
+  ApplicationInstance1:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-02a89066c48741345  # Replace with your desired AMI ID
+      SecurityGroupIds:
+        - !Ref ApplicationInstanceSecurityGroup
+      SubnetId: !Ref PrivateSubnet1
+
+  ApplicationInstance2:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref InstanceType
+      ImageId: ami-02a89066c48741345  # Replace with your desired AMI ID
+      SecurityGroupIds:
+        - !Ref ApplicationInstanceSecurityGroup
+      SubnetId: !Ref PrivateSubnet2
+
+  ApplicationInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for application instances
+      VpcId: !Ref VPC
+      
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: MyTargetGroup
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref VPC
+      HealthCheckIntervalSeconds: 30
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health-check  # Replace with your actual health check path
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref WebLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: mysql  # Replace with your desired database engine
+      # EngineVersion: 5.7  # Replace with your desired database engine version
+      MasterUsername: mydbadmin  # Replace with your desired database username
+      MasterUserPassword: mydbpassword  # Replace with your desired database password
+      AllocatedStorage: 10  # Replace with your desired storage size
+      MultiAZ: false
+      VPCSecurityGroups:
+        - !GetAtt DatabaseInstanceSecurityGroup.GroupId
+      DBSubnetGroupName: !Ref DBSubnetGroup
+
+  DatabaseInstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the database instance
+      VpcId: !Ref VPC
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for the database
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.0.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: false
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: false
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+Outputs:
+  WebLoadBalancerDNSName:
+    Description: DNS name of the web load balancer
+    Value: !GetAtt WebLoadBalancer.DNSName
+
+  WebInstancesPublicIPs:
+    Description: Public IPs of the web instances
+    Value: !Join [", ", [!GetAtt WebInstance1.PublicIp, !GetAtt WebInstance2.PublicIp]]
+
+  ApplicationInstancesPrivateIPs:
+    Description: Private IPs of the application instances
+    Value: !Join [", ", [!GetAtt ApplicationInstance1.PrivateIp, !GetAtt ApplicationInstance2.PrivateIp]]
